@@ -1,0 +1,11 @@
+numpy>=1.21.0
+h5py>=3.7.0
+# sentence-transformers>=2.2.0
+together>=0.2.0
+streamlit>=1.22.0
+faiss-cpu>=1.7.0 
+datasets>=2.10.0  
+python-dateutil>=2.8.2  
+pathlib>=1.0.1
+typing>=3.7.4
+tqdm>=4.62.3
