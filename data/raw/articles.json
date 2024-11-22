@@ -19,27 +19,35 @@
     "requested_url": "https://www.newyorker.com/newsletter/the-daily/the-lessons-of-trumps-election-triumph",
     "plain_text": "“What a night in America. A long, long night,” Vinson Cunningham wrote, as what seemed set to be a tight contest between Donald Trump and Kamala Harris rapidly revealed itself to be a dominant victory for the former President and his fellow-Republicans.",
     "published_date": "2020-11-04",
+    "title": "The Lessons of Trump’s Election Triumph",
     "language": "en",
+    "sitename": "New Yorker",
     "crawl_date": "2024-01-01T02:39:37+00:00"
 },
 {
     "requested_url": "https://www-daily/the-lessons-of-trumps-election-triumph",
     "plain_text": "“What a night in ng night,” Vinson Cunningham wrote, as what seemed set to be a tight contest between Donald Trump and Kamala Harris rapidly revealed itself to be a dominant victory for the former President and his fellow-Republicans.",
     "published_date": "2020-11-05",
+    "title": "The Lessons of Trump’s Election Triumph",
     "language": "en",
+    "sitename": "New Yorker",
     "crawl_date": "2024-01-01T02:39:37+00:00"
 },
 {
     "requested_url": "https://laopinion.com/2024/11/08/el-sorpendente-voto-latino-por-trump-la-economia-la-inmigracion-y-el-machismo/",
     "plain_text": "Hola elección",
+    "title": "El sorprendente voto latino por Trump: la economía, la inmigración y el machismo",
     "language": "es",
     "published_date": "2020-11-04",
+    "sitename": "La Opinion",
     "crawl_date": "2020-01-01T02:39:37+00:00"
 },
 {
     "requested_url": "https://laopinion.com/2024/11/08/eatino-por-trump-la-economia-la-inmigracion-y-el-machismo/",
     "plain_text": "Hola yay elección",
+    "title": "El sorprendente voto latino por Trump: la economía, la inmigración y el machismo",
     "language": "es",
     "published_date": "2020-11-04",
+    "sitename": "La Opinion",
     "crawl_date": "2020-01-01T02:39:37+00:00"
 }]

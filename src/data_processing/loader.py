@@ -73,11 +73,15 @@ def process_articles(dataset):
             "id": article_id,
             "text": article["plain_text"],
             "date": article["published_date"],
+            "source": article["sitename"],
+            "title": article["title"],
             "url": article["requested_url"]
         }
         articles[article["language"]].append(processed)
         article_id += 1
     # print(articles)
+    with open('data/processed/articles.json', 'w') as f:
+        json.dump(articles, f, indent=2)
     return articles
 
 def generate_embeddings(articles):
@@ -98,7 +102,7 @@ def generate_embeddings(articles):
 
     embeddings = {"en": {"embeddings": [], "article_ids": []},
                  "es": {"embeddings": [], "article_ids": []}}
-    print(articles)
+    # print(articles)
     for lang in ['en','es']:
         # Prepare texts for embedding
         # print(lang)

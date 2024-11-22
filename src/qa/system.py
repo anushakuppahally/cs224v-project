@@ -51,10 +51,9 @@ class ElectionQASystem:
                 "article_ids": embeddings[lang]["article_ids"]
             }
     
-    def get_relevant_context(self, query: str, language: str, k: int = 3) -> List[Dict[str, Any]]:
+    def get_relevant_context(self, query: str, lang: str = "en", k: int = 3) -> List[Dict[str, Any]]:
         """Retrieve relevant articles using RAG"""
         # Encode query
-        
         response = self.together_client.embeddings.create(
             input=[query],
             model=self.embedding_model
@@ -62,23 +61,29 @@ class ElectionQASystem:
         query_embedding = np.array([response.data[0].embedding])
         
         # Search in appropriate language index
-        D, I = self.indices[language]["index"].search(
-            np.array([query_embedding]), k
+        if lang not in self.indices:
+            raise ValueError(f"Language {lang} not found in indices")
+            
+        D, I = self.indices[lang]["index"].search(
+            query_embedding, k
         )
         
         # Get relevant articles
         relevant_articles = []
         for idx in I[0]:
-            article_id = self.indices[language]["article_ids"][idx]
+            article_id = self.indices[lang]["article_ids"][idx]
+            # print("article id",article_id)
+            # breakpoint()
+            # print("articles",self.articles[lang])
             article = next(
-                art for art in self.articles[language] 
+                art for art in self.articles[lang]
                 if art["id"] == article_id
             )
             relevant_articles.append(article)
             
         return relevant_articles
-    
-    def generate_answer(self, query: str, context: List[Dict[str, Any]], language: str) -> str:
+        
+    def generate_answer(self, query: str, context: List[Dict[str, Any]]) -> str:
         """Generate answer using LLM"""
         # Format context
         context_text = "\n\n".join(
@@ -97,11 +102,9 @@ Question: {query}
 Answer:"""
 
         # Generate response using Together API
-        response = self.together_client.complete(
+        response = self.together_client.completions.create(
             prompt=prompt,
-            model="togethercomputer/llama-2-70b-chat",
-            max_tokens=500,
-            temperature=0.7
+            model="mistralai/Mixtral-8x7B-Instruct-v0.1"
         )
         
-        return response.output.text
+        return response.choices[0].text

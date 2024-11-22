@@ -23,7 +23,6 @@ if __name__ == "__main__":
     for article in dataset:
         if filter_articles(article):
             processed_articles.append(article)
-    # save_processed_data(processed_articles, "data/raw/articles.json")
     # Generate and save embeddings
 
     processed_articles = process_articles(processed_articles)
