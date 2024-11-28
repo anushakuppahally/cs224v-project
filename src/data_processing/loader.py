@@ -3,15 +3,24 @@ from pathlib import Path
 import numpy as np
 import json
 import h5py
+import torch
+import gc
 from typing import List, Dict, Any
 from together import Together
 import streamlit as st
+from tqdm import tqdm
 import faiss
 from datasets import load_dataset
+from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
+import os
+from FlagEmbedding import BGEM3FlagModel
+from sentence_transformers import SentenceTransformer
+import pickle
 
-# Data loading and processing functions (keeping previous functions)
+
 def load_election_dataset():
-    """Load and initialize the CCNews dataset for 2020 election coverage"""
+    """Load and instantiate dataset of articles """
     # dataset = load_dataset(
     #     "stanford-oval/ccnews", 
     #     name="2020",
@@ -19,23 +28,39 @@ def load_election_dataset():
     #     streaming=True
     # ).filter(lambda article: article["language"] in ["en", "es"])
     # return dataset
-    with open('data/raw/articles.json', 'r') as file:
-        data = json.load(file)
+    with open('data/raw/articles.jsonl', 'r') as f:
+        data = [json.loads(line) for line in f]
     return data
 
-# [Previous functions remain the same...]
+# def translate_text(text: str, client: Together) -> str:
+#     """Translate Spanish text to English using Together AI's LLM"""
+#     prompt = f"""Translate the following Spanish text to English. 
+#     Maintain the original meaning and tone. Only output the translation, nothing else.
+    
+#     Text: {text}
+    
+#     Translation:"""
+    
+#     response = client.completions.create(
+#         prompt=prompt,
+#         model="nvidia/Llama-3.1-Nemotron-70B-Instruct-HF",
+#         max_tokens=4096,
+#         temperature=0.1  # no creativity in translation
+#     )
+    
+#     return response.choices[0].text.strip()
+
 def filter_articles(article):
     """Filter articles to keep only election-related content from 2020"""
-    # Check if article has required fields
+    # check if has needed fields 
     required_fields = ["plain_text", "published_date", "language"]
     if not all(field in article for field in required_fields):
         return False
-    # Define filters
-    start_date = datetime.datetime(2020, 11, 4, tzinfo=datetime.timezone.utc)
-    end_date = datetime.datetime(2020, 11, 5, tzinfo=datetime.timezone.utc)
-    # Check if date is within election period (Nov 4-5, 2020)
+    # date filters 
+    start_date = datetime.datetime(2020, 11, 3, tzinfo=datetime.timezone.utc)
+    end_date = datetime.datetime(2020, 11, 10, tzinfo=datetime.timezone.utc)
     
-    # Parse date
+    # filter for date and check formatting 
     try:
         date = datetime.datetime.strptime(article["published_date"], "%Y-%m-%d")
         if date.year != 2020:
@@ -50,84 +75,148 @@ def filter_articles(article):
     if not (start_date <= article_date <= end_date):
         return False
         
-    # Check language
+    # filter for language
     if article["language"] not in ["en", "es"]:
         return False
         
-    # Check for election-related keywords
-    keywords = ["election", "vote", "voting", "Trump", "Biden", "campaign", 
-               "elección", "voto", "votar", "campaña"]
+    # election related keywords
+    keywords = [
+        # English keywords
+        "election", "vote", "voting", "Trump", "Biden", 
+        "ballot", "electoral college", "swing state", "battleground state",
+        "polls", "polling", "democrat", "republican", "presidential",
+        "voter", "precinct", "mail-in", "absentee",
+         "supreme court", "electoral",
+        
+        # Spanish keywords
+        "elección", "voto", "votar", "boleta", "papeleta",
+        "colegio electoral", "estado pendular", "encuestas", "demócrata",
+        "republicano", "presidencial", "votante", "recinto", 
+        "correo", "ausente", "corte suprema", "electoral",
+        "urnas", "sufragio", "comicios", "escrutinio"
+    ]
     text = article["plain_text"].lower()
     if not any(kw.lower() in text for kw in keywords):
         return False
         
     return True
 
+# def batch_translate(texts: List[str], client: Together, batch_size: int = 8) -> List[str]:
+#     """Translate a batch of texts in parallel"""
+#     def create_translation_prompt(text: str) -> str:
+#         return f"""Translate the following Spanish text to English. Output only the translation:
+
+# Text: {text}
+
+# Translation:"""
+    
+#     # Create prompts for all texts
+#     prompts = [create_translation_prompt(text) for text in texts]
+    
+#     # Process batch
+#     response = client.completions.create(
+#         prompt=prompts,
+#         model="nvidia/Llama-3.1-Nemotron-70B-Instruct-HF",
+#         max_tokens=4096,
+#         temperature=0.1,
+#         n=len(prompts)  # Get translations for all prompts at once
+#     )
+    
+#     return [choice.text.strip() for choice in response.choices]
+
+@st.cache_data(show_spinner=False, persist="disk")
 def process_articles(dataset):
-    """Process filtered articles into language-specific collections"""
+    """Process articles into collections without translation"""
+    # Check if cached file exists
+    cache_file = Path('data/processed/articles.json')
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    if cache_file.exists():
+        print("Loading cached processed articles...")
+        with open(cache_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+
+        
+    print("Processing articles from scratch...")
     articles = {"en": [], "es": []}
     article_id = 0
     
-    for article in dataset:
+    for article in tqdm(dataset, desc="Processing articles"):
+        lang = article["language"]
         processed = {
             "id": article_id,
             "text": article["plain_text"],
+            "title": article["title"],
             "date": article["published_date"],
             "source": article["sitename"],
-            "title": article["title"],
-            "url": article["requested_url"]
+            "url": article["requested_url"],
+            "lang": lang
         }
-        articles[article["language"]].append(processed)
+        articles[lang].append(processed)
         article_id += 1
-    # print(articles)
-    with open('data/processed/articles.json', 'w') as f:
-        json.dump(articles, f, indent=2)
+    
+    with open(cache_file, 'w', encoding='utf-8') as f:
+        json.dump(articles, f, ensure_ascii=False, indent=2)
+    
+    print(f"\nProcessed {len(articles['en'])} English articles")
+    print(f"Processed {len(articles['es'])} Spanish articles")
+    
     return articles
 
-def generate_embeddings(articles):
-    """Generate embeddings from Together API.
+@lru_cache(maxsize=1000)
+def get_embedding_cached(text: str, client, model_api_string: str):
+    """Cache embeddings to avoid re-computing for identical texts"""
+    response = client.embeddings.create(
+        input=[text],
+        model=model_api_string
+    )
+    return response.data[0].embedding
 
-    Args:
-        articles: a dictionary with language keys and lists of article dictionaries as values.
 
-    Returns:
-        embeddings_list: a list of embeddings. Each element corresponds to the each input text.
-    """
-    with open("config.json", "r") as f:
-        config = json.load(f)
-    api_key = config["api_key"]
 
-    client = Together(api_key=api_key)
-    model_api_string = "togethercomputer/m2-bert-80M-8k-retrieval"
+def generate_embeddings(articles, cache_dir="embeddings_cache"):
+    """Generate embeddings using SentenceTransformer"""
+    # cache dir
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file = os.path.join(cache_dir, "embeddings_cache.pkl")
+    
+    # try to load from cache first
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'rb') as f:
+                return pickle.load(f)
+        except:
+            pass
 
+    # multilingual model for embeddings
+    model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
+    
     embeddings = {"en": {"embeddings": [], "article_ids": []},
                  "es": {"embeddings": [], "article_ids": []}}
-    # print(articles)
-    for lang in ['en','es']:
-        # Prepare texts for embedding
-        # print(lang)
-        articles_lang = articles[lang]
-        # print(articles_lang)
-        texts = [article["text"] for article in articles_lang]
-        # print(texts)
-        # Generate embeddings in batches
-        batch_size = 32
-        all_embeddings = []
-        
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
-            response = client.embeddings.create(
-                input=batch,
-                model=model_api_string
-            )
-            batch_embeddings = [emb.embedding for emb in response.data]
-            all_embeddings.extend(batch_embeddings)
-            
-        embeddings[lang]["embeddings"] = np.array(all_embeddings)
-        embeddings[lang]["article_ids"] = [art["id"] for art in articles[lang]]
-    # print(embeddings)
-    return embeddings
     
+    batch_size = 8
+    
+    for lang in tqdm(["en", "es"], desc="Processing languages"):
+        articles_lang = articles[lang]
+        texts = [article["text"] for article in articles_lang]
+        
+        # generate embeddings
+        batch_embeddings = model.encode(
+            texts,
+            batch_size=batch_size,
+            show_progress_bar=True,
+            convert_to_numpy=True
+        )
+        
+        embeddings[lang]["embeddings"] = batch_embeddings
+        embeddings[lang]["article_ids"] = np.array([art["id"] for art in articles[lang]], dtype=np.int32)
+        
+        gc.collect()
+    
+    with open(cache_file, 'wb') as f:
+        pickle.dump(embeddings, f)
+    
+    return embeddings
+
 def save_embeddings(embeddings, save_dir):
     """Save embeddings and metadata to disk"""
     save_dir = Path(save_dir)
