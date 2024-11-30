@@ -96,7 +96,7 @@ def create_streamlit_app():
                 
             st.session_state.chat_history.append({
                 'query': query,
-                'answer': answer
+                'answer': answer['answer']
             })
         
         st.rerun()

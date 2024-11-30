@@ -9,9 +9,28 @@ from typing import List, Dict, Any
 from together import Together
 from sentence_transformers import SentenceTransformer
 import streamlit as st
+import re
 import faiss
+import csv
+from pathlib import Path
+from datetime import datetime
 from datasets import load_dataset
+import pandas as pd 
+from typing import List, Dict, Any
+from dataclasses import dataclass
 from src.data_processing.loader import load_embeddings
+
+@dataclass
+class EvaluationResult:
+    #Helpfulness Relevance Accuracy Depth Creativity Level of Detail
+
+    helpfulness_score: float
+    relevance_score: float
+    accuracy_score: float
+    depth_score: float
+    creativity_score: float
+    level_of_detail_score: float
+    feedback: str
 
 with open("config.json", "r") as f:
     config = json.load(f)
@@ -20,7 +39,6 @@ class ElectionQASystem:
     def __init__(self, embeddings_dir: str, articles_file: str):
         self.embeddings_dir = Path(embeddings_dir)
         self.articles_file = Path(articles_file)
-        # Remove Together AI specific code
         self.api_key = config["api_key"]
         # self.embedding_model = "togethercomputer/m2-bert-80M-8k-retrieval"
         self.together_client = Together(api_key = self.api_key)
@@ -28,20 +46,40 @@ class ElectionQASystem:
         # initialize multilingual model
         self.embedding_model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-mpnet-base-v2')
         self.load_data()
+
+        # logging eval 
+        self.logs_dir = Path("logs")
+        self.logs_dir.mkdir(exist_ok=True)
+        self.eval_file = self.logs_dir / f"qa_evaluations_{datetime.now().strftime('%Y%m%d')}.csv"
         
+        if not self.eval_file.exists():
+            with open(self.eval_file, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    'timestamp',
+                    'query',
+                    'answer',
+                    'relevance_score',
+                    'accuracy_score',
+                    'helpfulness_score',
+                    'depth_score',
+                    'creativity_score',
+                    'level_of_detail_score',
+                    'feedback'
+                ])
     def load_data(self):
         """Load embeddings and articles"""
-        # Load articles
+        # load articles
         with open(self.articles_file, encoding='utf-8') as f:
             self.articles = json.load(f)
             
-        # Load embeddings and create FAISS indices
+        # load embeddings and create FAISS indices
         self.indices = {}
         embeddings = load_embeddings(self.embeddings_dir)
         
         for lang in embeddings:
             # index = faiss.IndexFlatL2(embeddings[lang]["embeddings"].shape[1]) 
-            # Check if embeddings exist and have data
+            # check if embeddings exist and have data
             if len(embeddings[lang]["embeddings"]) == 0:
                 raise ValueError(f"No embeddings found for language {lang}")
                 
@@ -65,8 +103,8 @@ class ElectionQASystem:
         """
         # use chat history if available
         if chat_history and len(chat_history) > 0:
-            # get the last few exchanges for context
-            recent_context = chat_history[-2:]  # last 2 exchanges
+            # get the last 2 exchanges for context
+            recent_context = chat_history[-2:]  
             context_text = "\n".join([
                 f"Previous User Question: {exchange['query']}\n"
                 f"Previous Answer: {exchange['answer']}\n"
@@ -134,12 +172,135 @@ class ElectionQASystem:
             relevant_articles.append(article)
             
         return relevant_articles
+    def evaluate_response(self, query: str, answer: str, context: List[Dict[str, Any]]) -> EvaluationResult:
+        """Evaluate the quality of the generated answer"""
         
+        # reate evaluation prompt
+        eval_prompt = f"""Evaluate this Q&A interaction about the 2020 US Presidential Election:
+
+        Question: {query}
+        Answer: {answer}
+
+        Rate each aspect from 1-5 (single digit between 1 and 5)and provide brief feedback:
+        - Helpfulness: How well did it address the user's needs?
+        - Relevance: How well did it stay on topic?
+        - Accuracy: How factually correct was it based on the context?
+        - Depth: How thorough was the explanation?
+        - Creativity: How well did it synthesize information?
+        - Level of Detail: How specific and informative was it?
+
+        Format your response as:
+        Helpfulness: [score] - [feedback]
+        Relevance: [score] - [feedback]
+        Accuracy: [score] - [feedback]
+        Depth: [score] - [feedback]
+        Creativity: [score] - [feedback]
+        Level of Detail: [score] - [feedback]"""
+
+        # use LLM eval
+        response = self.together_client.completions.create(
+            prompt=eval_prompt,
+            max_tokens=512,
+            temperature=0.1, 
+            top_p=0.3,       
+            frequency_penalty=0.0, 
+            presence_penalty=0.0,  
+            model="nvidia/Llama-3.1-Nemotron-70B-Instruct-HF"
+        )
+        print(response.choices[0].text)
+        feedback = response.choices[0].text.strip()
+        
+        # get scores from feedback
+        scores = {
+        'helpfulness': 0.0,
+        'relevance': 0.0,
+        'accuracy': 0.0,
+        'depth': 0.0,
+        'creativity': 0.0,
+        'level of detail': 0.0
+        }
+    
+        for line in feedback.split('\n'):
+            line = line.strip()
+            if ':' in line:
+                try:
+                    metric, content = line.split(':', 1)
+                    metric = metric.lower().strip()
+                    
+                    # Extract score more robustly
+                    if '-' in content:
+                        score_part = content.split('-')[0].strip()
+                        score_match = re.search(r'[1-5]', score_part)
+                        if score_match:
+                            scores[metric] = float(score_match.group())
+                    else:
+                        # Try to find any number 1-5 in the content
+                        score_match = re.search(r'[1-5]', content)
+                        if score_match:
+                            scores[metric] = float(score_match.group())
+                            
+                except Exception as e:
+                    print(f"Error parsing line: {line}, Error: {e}")
+                    continue
+
+        return EvaluationResult(
+            helpfulness_score=scores['helpfulness'],
+            relevance_score=scores['relevance'],
+            accuracy_score=scores['accuracy'],
+            depth_score=scores['depth'],
+            creativity_score=scores['creativity'],
+            level_of_detail_score=scores['level of detail'],
+            feedback=feedback
+        )
+
+
+    def log_evaluation(
+        self, 
+        query: str, 
+        answer: str, 
+        evaluation: EvaluationResult
+    ) -> None:
+        """Log the Q&A interaction and its evaluation metrics to CSV"""
+        
+        # different metrics
+        feedback_dict = {}
+        for line in evaluation.feedback.split('\n'):
+            if line.startswith('Helpfulness:'):
+                feedback_dict['helpfulness'] = line.split('-')[1].strip()
+            elif line.startswith('Relevance:'):
+                feedback_dict['relevance'] = line.split('-')[1].strip()
+            elif line.startswith('Accuracy:'): 
+                feedback_dict['accuracy'] = line.split('-')[1].strip()
+            elif line.startswith('Depth:'):
+                feedback_dict['depth'] = line.split('-')[1].strip()
+            elif line.startswith('Creativity:'):
+                feedback_dict['creativity'] = line.split('-')[1].strip()
+            elif line.startswith('Level of Detail:'):
+                feedback_dict['level_of_detail'] = line.split('-')[1].strip()
+
+        # Append to CSV
+        with open(self.eval_file, 'a', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                datetime.now().isoformat(),
+                query,
+                answer,
+                evaluation.helpfulness_score,
+                evaluation.relevance_score, 
+                evaluation.accuracy_score,
+                evaluation.depth_score,
+                evaluation.creativity_score,
+                evaluation.level_of_detail_score,
+                evaluation.feedback
+            ])
+
     def generate_answer(self, query: str, context: List[Dict[str, Any]], chat_history=None) -> str:
         """Generate answer using LLM"""
         if not self.classify_query(query, chat_history):
-            return "I apologize, but I can only answer questions related to the 2020 US Presidential Election."
-        
+            return {
+                "answer": "I apologize, but I can only answer questions related to the 2020 US Presidential Election.",
+                "evaluation": None
+            }
         # format context 
         context_text = "\n\n".join(
             f"Title: {art['title']}\nContent: {art['text']}" 
@@ -173,4 +334,13 @@ class ElectionQASystem:
             model="nvidia/Llama-3.1-Nemotron-70B-Instruct-HF"
 
         )
-        return response.choices[0].text
+        answer = response.choices[0].text
+        evaluation = self.evaluate_response(query, answer, context)
+        
+        # log results
+        self.log_evaluation(query, answer, evaluation)
+        
+        return {
+            "answer": answer,
+            "evaluation": evaluation
+        }
