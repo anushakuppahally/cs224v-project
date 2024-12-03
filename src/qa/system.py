@@ -59,14 +59,14 @@ class ElectionQASystem:
                     'timestamp',
                     'query',
                     'answer',
+                    'helpfulness_score',
                     'relevance_score',
                     'accuracy_score',
-                    'helpfulness_score',
                     'depth_score',
                     'creativity_score',
                     'level_of_detail_score',
                     'feedback'
-                ])
+                ]) # switch helpfulness and relevance order 
     def load_data(self):
         """Load embeddings and articles"""
         # load articles
@@ -175,83 +175,101 @@ class ElectionQASystem:
     def evaluate_response(self, query: str, answer: str, context: List[Dict[str, Any]]) -> EvaluationResult:
         """Evaluate the quality of the generated answer"""
         
-        # reate evaluation prompt
-        eval_prompt = f"""Evaluate this Q&A interaction about the 2020 US Presidential Election:
+        eval_prompt = f"""Rate the following Q&A interaction about the 2020 US Presidential Election on a scale of 1-5:
 
-        Question: {query}
-        Answer: {answer}
+Question: {query}
+Answer: {answer}
 
-        Rate each aspect from 1-5 (single digit between 1 and 5)and provide brief feedback:
-        - Helpfulness: How well did it address the user's needs?
-        - Relevance: How well did it stay on topic?
-        - Accuracy: How factually correct was it based on the context?
-        - Depth: How thorough was the explanation?
-        - Creativity: How well did it synthesize information?
-        - Level of Detail: How specific and informative was it?
+Please rate each category and provide a brief explanation:
+Helpfulness: [1-5]
+Relevance: [1-5]
+Accuracy: [1-5]
+Depth: [1-5]
+Creativity: [1-5]
+Level of Detail: [1-5]"""
 
-        Format your response as:
-        Helpfulness: [score] - [feedback]
-        Relevance: [score] - [feedback]
-        Accuracy: [score] - [feedback]
-        Depth: [score] - [feedback]
-        Creativity: [score] - [feedback]
-        Level of Detail: [score] - [feedback]"""
+        try:
+            # print("\n=== PROMPT BEING SENT ===")
+            # print(eval_prompt)
+            
+            # Ensure prompt is properly formatted for the API
+            response = self.together_client.completions.create(
+                model="nvidia/Llama-3.1-Nemotron-70B-Instruct-HF",
+                prompt=eval_prompt,  # Make sure prompt is the first parameter
+                max_tokens=512,
+                temperature=0.1,
+                top_p=0.9,
+                frequency_penalty=0.0,
+                presence_penalty=0.0
+            )
+            
+            # print("\n=== API Response Object ===")
+            # print(response)
+            
+            if not response or not response.choices or not response.choices[0].text:
+                print("Warning: Empty or invalid response from LLM")
+                raise ValueError("Empty response from LLM")
+            
+            feedback = response.choices[0].text.strip()
+            # print("\n=== RAW LLM RESPONSE TEXT ===")
+            # print(feedback)
+            
+            if not feedback:
+                print("Warning: Empty feedback text")
+                raise ValueError("Empty feedback text")
+            
+            # print("\n=== RAW LLM RESPONSE ===")
+            # print(response.choices[0].text)
+            
+            scores = {
+                'helpfulness': 0.0,
+                'relevance': 0.0,
+                'accuracy': 0.0,
+                'depth': 0.0,
+                'creativity': 0.0,
+                'level of detail': 0.0
+            }
 
-        # use LLM eval
-        response = self.together_client.completions.create(
-            prompt=eval_prompt,
-            max_tokens=512,
-            temperature=0.1, 
-            top_p=0.3,       
-            frequency_penalty=0.0, 
-            presence_penalty=0.0,  
-            model="nvidia/Llama-3.1-Nemotron-70B-Instruct-HF"
-        )
-        print(response.choices[0].text)
-        feedback = response.choices[0].text.strip()
-        
-        # get scores from feedback
-        scores = {
-        'helpfulness': 0.0,
-        'relevance': 0.0,
-        'accuracy': 0.0,
-        'depth': 0.0,
-        'creativity': 0.0,
-        'level of detail': 0.0
-        }
-    
-        for line in feedback.split('\n'):
-            line = line.strip()
-            if ':' in line:
-                try:
-                    metric, content = line.split(':', 1)
-                    metric = metric.lower().strip()
-                    
-                    # Extract score more robustly
-                    if '-' in content:
-                        score_part = content.split('-')[0].strip()
-                        score_match = re.search(r'[1-5]', score_part)
+            print("\n=== PARSING LINES ===")
+            for line in feedback.split('\n'):
+                line = line.strip()
+                # clean up the line
+                line = line.replace('*', '').strip()
+                print(f"Processing line: {line}")
+                
+                # check for metrics
+                for metric in scores.keys():
+                    if metric.lower() in line.lower():
+                        score_match = re.search(r'\b[1-5]\b', line)
                         if score_match:
                             scores[metric] = float(score_match.group())
-                    else:
-                        # Try to find any number 1-5 in the content
-                        score_match = re.search(r'[1-5]', content)
-                        if score_match:
-                            scores[metric] = float(score_match.group())
-                            
-                except Exception as e:
-                    print(f"Error parsing line: {line}, Error: {e}")
-                    continue
+                            print(f"Found {metric} score: {scores[metric]}")
 
-        return EvaluationResult(
-            helpfulness_score=scores['helpfulness'],
-            relevance_score=scores['relevance'],
-            accuracy_score=scores['accuracy'],
-            depth_score=scores['depth'],
-            creativity_score=scores['creativity'],
-            level_of_detail_score=scores['level of detail'],
-            feedback=feedback
-        )
+            # print("\n=== FINAL SCORES ===")
+            # print(scores)
+
+            return EvaluationResult(
+                helpfulness_score=scores['helpfulness'],
+                relevance_score=scores['relevance'],
+                accuracy_score=scores['accuracy'],
+                depth_score=scores['depth'],
+                creativity_score=scores['creativity'],
+                level_of_detail_score=scores['level of detail'],
+                feedback=feedback
+            )
+
+        except Exception as e:
+            print(f"Error in evaluate_response: {str(e)}")
+            # return default evaluation with error message
+            return EvaluationResult(
+                helpfulness_score=0,
+                relevance_score=0,
+                accuracy_score=0,
+                depth_score=0,
+                creativity_score=0,
+                level_of_detail_score=0,
+                feedback=f"Error during evaluation: {str(e)}"
+            )
 
 
     def log_evaluation(
@@ -322,6 +340,7 @@ class ElectionQASystem:
         - Keep Spanish article titles in their original language
         - Only include information from the provided sources
         - Include in text citations when relevant
+        - Keep responses less than the max number of tokens (512)
         - If you cannot answer based on these sources, say so clearly"""
 
         # get response from LLM
@@ -334,7 +353,7 @@ class ElectionQASystem:
             model="nvidia/Llama-3.1-Nemotron-70B-Instruct-HF"
 
         )
-        answer = response.choices[0].text
+        answer = response.choices[0].text.strip()
         evaluation = self.evaluate_response(query, answer, context)
         
         # log results

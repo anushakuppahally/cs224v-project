@@ -11,9 +11,8 @@ from datasets import load_dataset
 from src.qa.system import ElectionQASystem
 
 def create_streamlit_app():
-    st.title("2020 Election Q&A System")
+    st.title("ElectionBot: A Bilingual RAG-Based Question Answering System 🗳️")
     
-    # initialize QA system
     qa_system = ElectionQASystem(
         embeddings_dir="data/processed/embeddings",
         articles_file="data/processed/articles.json"
