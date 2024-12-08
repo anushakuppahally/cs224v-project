@@ -1,10 +1,10 @@
 # ElectionBot: A Bilingual RAG-Based Question Answering System 🗳
 
-An agent that helps analyze and output insights based on news sources, using TogetherAI and Streamlit. This project is meant to help analyze and summarize viewpoints about the 2020 Presidential Election from articles in both English and Spanish. 
+An agent that helps analyze and output insights based on news sources, using TogetherAI and Streamlit. This project is meant to help extract and summarize viewpoints about the 2020 Presidential Election from articles in both English and Spanish. 
 
 ## Overview 
 
-This project helps implement a QA LLM system that helps users with questions about the election. Specifically, this system is able to help with cross-lingual analysis. 
+This project helps implement an LLM-based QA system that helps users with questions about the election. Specifically, this system is able to help with cross-lingual analysis. 
 
 ## Features 
 
@@ -17,7 +17,7 @@ This project helps implement a QA LLM system that helps users with questions abo
 - determines if a query is relevant before the system retrieves articles 
 - when applicable, uses the past two interactions in chat history to determine this
 
-#### User Interface 
+#### User Interface
 - easy to use Streamlit UI 
 - chat history and quick, concise responses
 
