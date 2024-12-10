@@ -76,7 +76,7 @@ def create_streamlit_app():
     # query input using a unique key for each render
     query = st.text_input(
         "Enter your question about the 2020 US Election:",
-        key=f"query_{len(st.session_state.chat_history)}"  # Unique key based on chat history length
+        key=f"query_{len(st.session_state.chat_history)}"  # unique key based on chat history length
     )
     
     if st.button("Submit") and query:

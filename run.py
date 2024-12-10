@@ -1,4 +1,3 @@
-# Core data processing functions
 import datetime
 from pathlib import Path
 import numpy as np

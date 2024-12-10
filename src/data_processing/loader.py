@@ -32,23 +32,6 @@ def load_election_dataset():
         data = [json.loads(line) for line in f]
     return data
 
-# def translate_text(text: str, client: Together) -> str:
-#     """Translate Spanish text to English using Together AI's LLM"""
-#     prompt = f"""Translate the following Spanish text to English. 
-#     Maintain the original meaning and tone. Only output the translation, nothing else.
-    
-#     Text: {text}
-    
-#     Translation:"""
-    
-#     response = client.completions.create(
-#         prompt=prompt,
-#         model="nvidia/Llama-3.1-Nemotron-70B-Instruct-HF",
-#         max_tokens=4096,
-#         temperature=0.1  # no creativity in translation
-#     )
-    
-#     return response.choices[0].text.strip()
 
 def filter_articles(article):
     """Filter articles to keep only election-related content from 2020"""
@@ -101,33 +84,11 @@ def filter_articles(article):
         
     return True
 
-# def batch_translate(texts: List[str], client: Together, batch_size: int = 8) -> List[str]:
-#     """Translate a batch of texts in parallel"""
-#     def create_translation_prompt(text: str) -> str:
-#         return f"""Translate the following Spanish text to English. Output only the translation:
-
-# Text: {text}
-
-# Translation:"""
-    
-#     # Create prompts for all texts
-#     prompts = [create_translation_prompt(text) for text in texts]
-    
-#     # Process batch
-#     response = client.completions.create(
-#         prompt=prompts,
-#         model="nvidia/Llama-3.1-Nemotron-70B-Instruct-HF",
-#         max_tokens=4096,
-#         temperature=0.1,
-#         n=len(prompts)  # Get translations for all prompts at once
-#     )
-    
-#     return [choice.text.strip() for choice in response.choices]
 
 @st.cache_data(show_spinner=False, persist="disk")
 def process_articles(dataset):
     """Process articles into collections without translation"""
-    # Check if cached file exists
+    # check if cached file exists
     cache_file = Path('data/processed/articles.json')
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     if cache_file.exists():

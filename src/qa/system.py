@@ -1,4 +1,3 @@
-# New RAG and QA System functions
 import datetime
 from pathlib import Path
 import numpy as np
